@@ -24,8 +24,8 @@ static lv_obj_t *statusLabel;
 
 // Image processing buffers
 static uint8_t *grayscaleBuffer = NULL;
-static uint8_t *equalizedBuffer = NULL;
 static uint16_t *rgb565Buffer = NULL;
+static uint16_t *equalizedRGB565Buffer = NULL;
 
 // Current state
 static uint8_t currentState = 0; // 0=splash, 1=original, 2=grayscale, 3=equalized
@@ -33,10 +33,11 @@ static uint32_t lastSwitchTime = 0;
 
 // Forward declarations
 void convertToGrayscale(const lv_img_dsc_t* imgDsc, uint8_t* grayData);
-void histogramEqualization(const uint8_t* inputGray, uint8_t* outputGray, uint16_t width, uint16_t height);
+void histogramEqualizationRGB(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
 void displayImageOnScreen(const lv_img_dsc_t *imgDsc, const char *title);
 void displaySplashScreen(const char *nextImage);
 lv_img_dsc_t createGrayscaleImage(const uint8_t* grayData, uint16_t width, uint16_t height);
+lv_img_dsc_t createRGB565Image(const uint16_t* rgbData, uint16_t width, uint16_t height);
 
 // LVGL tick function
 uint32_t millis_cb(void) {
@@ -138,38 +139,75 @@ void convertToGrayscale(const lv_img_dsc_t* imgDsc, uint8_t* grayData) {
     Serial.println("Grayscale conversion complete");
 }
 
-// Perform histogram equalization
-void histogramEqualization(const uint8_t* inputGray, uint8_t* outputGray, uint16_t width, uint16_t height) {
-    Serial.println("Performing histogram equalization...");
+// Perform histogram equalization on RGB565 image
+void histogramEqualizationRGB(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565) {
+    Serial.println("Performing histogram equalization on RGB channels...");
     
-    uint32_t histogram[256] = {0};
-    uint32_t cdf[256] = {0};
+    uint16_t width = imgDsc->header.w;
+    uint16_t height = imgDsc->header.h;
+    const uint16_t* rgbData = (const uint16_t*)imgDsc->data;
     uint32_t totalPixels = width * height;
     
-    // Build histogram
+    // Process each color channel separately
+    uint32_t histogramR[256] = {0};
+    uint32_t histogramG[256] = {0};
+    uint32_t histogramB[256] = {0};
+    
+    uint32_t cdfR[256] = {0};
+    uint32_t cdfG[256] = {0};
+    uint32_t cdfB[256] = {0};
+    
+    // Build histograms for each channel
     for (uint32_t i = 0; i < totalPixels; i++) {
-        histogram[inputGray[i]]++;
+        uint16_t pixel = rgbData[i];
+        
+        uint8_t r8 = ((pixel >> 11) & 0x1F) * 255 / 31;
+        uint8_t g8 = ((pixel >> 5) & 0x3F) * 255 / 63;
+        uint8_t b8 = (pixel & 0x1F) * 255 / 31;
+        
+        histogramR[r8]++;
+        histogramG[g8]++;
+        histogramB[b8]++;
     }
     
-    // Calculate cumulative distribution function (CDF)
-    cdf[0] = histogram[0];
+    // Calculate CDFs for each channel
+    cdfR[0] = histogramR[0];
+    cdfG[0] = histogramG[0];
+    cdfB[0] = histogramB[0];
+    
     for (int i = 1; i < 256; i++) {
-        cdf[i] = cdf[i - 1] + histogram[i];
+        cdfR[i] = cdfR[i - 1] + histogramR[i];
+        cdfG[i] = cdfG[i - 1] + histogramG[i];
+        cdfB[i] = cdfB[i - 1] + histogramB[i];
     }
     
-    // Find minimum non-zero CDF value
-    uint32_t cdfMin = 0;
+    // Find minimum non-zero CDF values
+    uint32_t cdfMinR = 0, cdfMinG = 0, cdfMinB = 0;
     for (int i = 0; i < 256; i++) {
-        if (cdf[i] > 0) {
-            cdfMin = cdf[i];
-            break;
-        }
+        if (cdfR[i] > 0 && cdfMinR == 0) cdfMinR = cdfR[i];
+        if (cdfG[i] > 0 && cdfMinG == 0) cdfMinG = cdfG[i];
+        if (cdfB[i] > 0 && cdfMinB == 0) cdfMinB = cdfB[i];
     }
     
-    // Apply histogram equalization
+    // Apply histogram equalization to each channel
     for (uint32_t i = 0; i < totalPixels; i++) {
-        uint8_t oldValue = inputGray[i];
-        outputGray[i] = (uint8_t)(((cdf[oldValue] - cdfMin) * 255) / (totalPixels - cdfMin));
+        uint16_t pixel = rgbData[i];
+        
+        uint8_t r8 = ((pixel >> 11) & 0x1F) * 255 / 31;
+        uint8_t g8 = ((pixel >> 5) & 0x3F) * 255 / 63;
+        uint8_t b8 = (pixel & 0x1F) * 255 / 31;
+        
+        // Equalize each channel
+        uint8_t eqR = (uint8_t)(((cdfR[r8] - cdfMinR) * 255) / (totalPixels - cdfMinR));
+        uint8_t eqG = (uint8_t)(((cdfG[g8] - cdfMinG) * 255) / (totalPixels - cdfMinG));
+        uint8_t eqB = (uint8_t)(((cdfB[b8] - cdfMinB) * 255) / (totalPixels - cdfMinB));
+        
+        // Convert back to RGB565
+        uint16_t r5 = (eqR >> 3) & 0x1F;
+        uint16_t g6 = (eqG >> 2) & 0x3F;
+        uint16_t b5 = (eqB >> 3) & 0x1F;
+        
+        outputRGB565[i] = (r5 << 11) | (g6 << 5) | b5;
     }
     
     Serial.println("Histogram equalization complete");
@@ -227,6 +265,18 @@ lv_img_dsc_t createGrayscaleImage(const uint8_t* grayData, uint16_t width, uint1
     return img_dsc;
 }
 
+// Create RGB565 image descriptor
+lv_img_dsc_t createRGB565Image(const uint16_t* rgbData, uint16_t width, uint16_t height) {
+    lv_img_dsc_t img_dsc;
+    img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+    img_dsc.header.w = width;
+    img_dsc.header.h = height;
+    img_dsc.data = (const uint8_t*)rgbData;
+    img_dsc.data_size = width * height * 2;
+    
+    return img_dsc;
+}
+
 // Setup function
 void setup() {
     Serial.begin(115200);
@@ -273,10 +323,10 @@ void setup() {
     // Allocate processing buffers
     uint32_t pixelCount = SCREEN_WIDTH * SCREEN_HEIGHT;
     grayscaleBuffer = (uint8_t*)malloc(pixelCount);
-    equalizedBuffer = (uint8_t*)malloc(pixelCount);
     rgb565Buffer = (uint16_t*)malloc(pixelCount * 2);
+    equalizedRGB565Buffer = (uint16_t*)malloc(pixelCount * 2);
     
-    if (!grayscaleBuffer || !equalizedBuffer || !rgb565Buffer) {
+    if (!grayscaleBuffer || !rgb565Buffer || !equalizedRGB565Buffer) {
         Serial.println("Failed to allocate processing buffers!");
         while (true) {}
     }
@@ -336,11 +386,10 @@ void loop() {
             
         case 4: // Splash for equalized
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
-                histogramEqualization(grayscaleBuffer, equalizedBuffer, 
-                                    img2.header.w, img2.header.h);
-                lv_img_dsc_t eqImg = createGrayscaleImage(equalizedBuffer, 
-                                                          img2.header.w, 
-                                                          img2.header.h);
+                histogramEqualizationRGB(&img2, equalizedRGB565Buffer);
+                lv_img_dsc_t eqImg = createRGB565Image(equalizedRGB565Buffer, 
+                                                        img2.header.w, 
+                                                        img2.header.h);
                 displayImageOnScreen(&eqImg, "Histogram Equalized");
                 currentState = 5;
                 lastSwitchTime = currentTime;
