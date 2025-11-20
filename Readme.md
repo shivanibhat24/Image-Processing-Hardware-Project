@@ -40,10 +40,7 @@ Total ≈ 250 KB → fits comfortably in ESP32-C6 SPIRAM or internal RAM.
 ## Input Image
 ![img2](https://github.com/user-attachments/assets/1d065644-b299-4840-b384-e90500c676bf)
 
-## Output 
-<img width="233" height="367" alt="image" src="https://github.com/user-attachments/assets/595a6a38-1b67-4361-855a-f008ec400ed0" />
-<img width="241" height="341" alt="image" src="https://github.com/user-attachments/assets/371da70f-91b8-4251-81ad-f01ab80c1a4e" />
-<img width="226" height="359" alt="image" src="https://github.com/user-attachments/assets/d3e91500-37e8-4059-913e-672b5bd93317" />
+
 
 
 
