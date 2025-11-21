@@ -288,11 +288,7 @@ Each effect teaches you something cool:
 
 ---
 
-## 🙏 Credits & Love
-
-Built with 💖 by passionate makers for passionate makers!
-
-### 🛠️ Powered By:
+## 🛠️ Powered By:
 - **ESP32-C6**: The tiny powerhouse
 - **LVGL**: Graphics magic maker
 - **Arduino**: Making hardware accessible
