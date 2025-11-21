@@ -327,18 +327,3 @@ Feel free to:
 **Made with 💖, ☕, and countless hours of pixel-perfect tweaking**
 
 *Remember: Life's too short for boring displays!* ✨
-
-[![GitHub Stars](https://img.shields.io/github/stars/yourusername/esp32-image-effects?style=social)](https://github.com/yourusername/esp32-image-effects)
-[![Follow](https://img.shields.io/github/followers/yourusername?style=social)](https://github.com/yourusername)
-
-</div>
-
----
-
-<div align="center">
-
-###  Happy Coding! 
-
-*Now go forth and make those pixels dance!* 💃🕺
-
-</div>
