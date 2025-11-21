@@ -527,7 +527,7 @@ void applyThermalMood(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565, uint8_
         
         switch(mode) {
             case 0: // CALM MODE - Blue/Purple gradient
-                nr = luma * 120 + 50;  // Soft purple
+                nr = luma * 200 + 50;  // Soft purple
                 ng = luma * 80 + 30;   // Less green
                 nb = luma * 200 + 55;  // Strong blue
                 break;
@@ -916,7 +916,7 @@ void loop() {
             break;
             
         case 11: // Showing underwater
-            if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
+            if (currentTime - lastSwitchTime >= 8000) { //10s for underwater
                 displaySplashScreen("Halftone Effect");
                 currentState = 12;
                 lastSwitchTime = currentTime;
