@@ -78,6 +78,9 @@ Your 172x320 display becomes a canvas where images dance through **11 stunning e
 | 🌧️ **Rainy** | *Moody Blues* | Desaturated cool grays 🩶 |
 
 ---
+### Input Image
+
+![img2](https://github.com/user-attachments/assets/14163fa8-3973-4043-8d06-2699b467a322)
 
 ## 🚀 Quick Start
 
