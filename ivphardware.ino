@@ -12,8 +12,8 @@ extern const lv_img_dsc_t img2;
 #define SCREEN_BRIGHTNESS 255
 #define SCREEN_WIDTH 172
 #define SCREEN_HEIGHT 320
-#define DISPLAY_TIME 5000  // 5 seconds per image
-#define SPLASH_TIME 3000   // 3 seconds for splash screen
+#define DISPLAY_TIME 5000  // 3 seconds per image
+#define SPLASH_TIME 1500   // 1.5 seconds for splash screen
 
 // LVGL Display
 lv_display_t *disp;
@@ -35,7 +35,8 @@ static lv_img_dsc_t currentDisplayImage;
 void convertToGrayscale(const lv_img_dsc_t* imgDsc, uint8_t* grayData);
 void histogramEqualizationRGB(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
 void applySepiaEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
-void applyComicEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
+void applyLowPolyEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
+void applyUnderwaterEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
 void detectEdges(const lv_img_dsc_t* imgDsc, uint8_t* edgeData);
 void applyHalftoneEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565);
 void applyThermalMood(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565, uint8_t mode);
@@ -250,64 +251,180 @@ void detectEdges(const lv_img_dsc_t* imgDsc, uint8_t* edgeData) {
     Serial.println("Edge detection complete");
 }
 
-// Apply comic book effect (ENHANCED)
-void applyComicEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565) {
-    Serial.println("Applying enhanced comic effect...");
+// Apply Low Poly Effect (Triangulated/Faceted Look)
+void applyLowPolyEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565) {
+    Serial.println("Applying low poly effect...");
     
     uint16_t width = imgDsc->header.w;
     uint16_t height = imgDsc->header.h;
     const uint16_t* rgbData = (const uint16_t*)imgDsc->data;
     
-    // Step 1: Detect edges (reuses grayscaleBuffer for edge data)
-    detectEdges(imgDsc, grayscaleBuffer);
+    // Triangle/polygon size - larger = fewer polygons
+    const uint8_t polySize = 12;
     
-    // Step 2: Enhanced color quantization with brightness boost
-    const uint8_t levels = 140; // 6 levels per channel = more color variety
-    const uint8_t step = 256 / levels;
-    
-    for (uint32_t i = 0; i < width * height; i++) {
-        uint16_t pixel = rgbData[i];
-        
-        // Extract RGB components
-        uint8_t r = ((pixel >> 11) & 0x1F) * 255 / 31;
-        uint8_t g = ((pixel >> 5) & 0x3F) * 255 / 63;
-        uint8_t b = (pixel & 0x1F) * 255 / 31;
-        
-        // Boost brightness slightly for more vibrant comic look
-        r = (r * 110 / 100) > 255 ? 255 : (r * 110 / 100);
-        g = (g * 110 / 100) > 255 ? 255 : (g * 110 / 100);
-        b = (b * 110 / 100) > 255 ? 255 : (b * 110 / 100);
-        
-        // Quantize colors
-        uint8_t qr = (r / step) * step + step/2;
-        uint8_t qg = (g / step) * step + step/2;
-        uint8_t qb = (b / step) * step + step/2;
-        
-        // Clamp after quantization
-        qr = qr > 255 ? 255 : qr;
-        qg = qg > 255 ? 255 : qg;
-        qb = qb > 255 ? 255 : qb;
-        
-        // Step 3: Enhanced edge overlay - make edges black/very dark
-        uint8_t edge = grayscaleBuffer[i];
-        if (edge > 80) { // Lower threshold for more edge detection
-            // Make edges much darker/black
-            float edgeFactor = (edge - 80) / 175.0f; // 0.0 to 1.0
-            edgeFactor = edgeFactor > 1.0f ? 1.0f : edgeFactor;
-            qr = qr * (1.0f - edgeFactor * 0.9f); // Darken up to 90%
-            qg = qg * (1.0f - edgeFactor * 0.9f);
-            qb = qb * (1.0f - edgeFactor * 0.9f);
+    // Process image in blocks to create faceted triangular regions
+    for (uint16_t y = 0; y < height; y += polySize) {
+        for (uint16_t x = 0; x < width; x += polySize) {
+            // Calculate average color for this block region
+            uint32_t sumR = 0, sumG = 0, sumB = 0;
+            uint16_t count = 0;
+            
+            // Sample the block
+            for (uint16_t dy = 0; dy < polySize && (y + dy) < height; dy++) {
+                for (uint16_t dx = 0; dx < polySize && (x + dx) < width; dx++) {
+                    uint32_t idx = (y + dy) * width + (x + dx);
+                    uint16_t pixel = rgbData[idx];
+                    
+                    sumR += ((pixel >> 11) & 0x1F);
+                    sumG += ((pixel >> 5) & 0x3F);
+                    sumB += (pixel & 0x1F);
+                    count++;
+                }
+            }
+            
+            // Calculate average color in RGB565 components
+            uint16_t avgR5 = (sumR / count) & 0x1F;
+            uint16_t avgG6 = (sumG / count) & 0x3F;
+            uint16_t avgB5 = (sumB / count) & 0x1F;
+            
+            // Create two triangular regions within the block for more geometric look
+            for (uint16_t dy = 0; dy < polySize && (y + dy) < height; dy++) {
+                for (uint16_t dx = 0; dx < polySize && (x + dx) < width; dx++) {
+                    uint32_t idx = (y + dy) * width + (x + dx);
+                    
+                    // Determine which triangle this pixel belongs to
+                    // Diagonal split creates two triangles
+                    bool upperTriangle = (dx + dy) < polySize;
+                    
+                    // Add slight variation between triangles for faceted look
+                    uint16_t r5 = avgR5;
+                    uint16_t g6 = avgG6;
+                    uint16_t b5 = avgB5;
+                    
+                    if (!upperTriangle) {
+                        // Lower triangle - slightly darker
+                        r5 = (r5 * 90 / 100);
+                        g6 = (g6 * 90 / 100);
+                        b5 = (b5 * 90 / 100);
+                    }
+                    
+                    // Add edge darkening for polygon borders
+                    if (dx == 0 || dy == 0 || dx == polySize-1 || dy == polySize-1 ||
+                        (upperTriangle && dx + dy == polySize - 1) ||
+                        (!upperTriangle && dx + dy == polySize)) {
+                        r5 = r5 * 70 / 100;
+                        g6 = g6 * 70 / 100;
+                        b5 = b5 * 70 / 100;
+                    }
+                    
+                    outputRGB565[idx] = (r5 << 11) | (g6 << 5) | b5;
+                }
+            }
         }
-        
-        // Convert back to RGB565
-        uint16_t r5 = (qr >> 3) & 0x1F;
-        uint16_t g6 = (qg >> 2) & 0x3F;
-        uint16_t b5 = (qb >> 3) & 0x1F;
-        
-        outputRGB565[i] = (r5 << 11) | (g6 << 5) | b5;
     }
     
-    Serial.println("Comic effect complete");
+    Serial.println("Low poly effect complete");
+}
+
+// Apply Underwater Effect with caustics and distortion
+void applyUnderwaterEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565) {
+    Serial.println("Applying underwater effect...");
+    
+    uint16_t width = imgDsc->header.w;
+    uint16_t height = imgDsc->header.h;
+    const uint16_t* rgbData = (const uint16_t*)imgDsc->data;
+    
+    // Time-based animation seed (use millis for dynamic effect)
+    float timeOffset = (millis() % 10000) / 1000.0f;
+    
+    for (uint16_t y = 0; y < height; y++) {
+        for (uint16_t x = 0; x < width; x++) {
+            uint32_t idx = y * width + x;
+            
+            // Create wave distortion (simulates water surface refraction)
+            // Multiple sine waves at different frequencies
+            float wave1 = sin((x * 0.05f) + (y * 0.03f) + timeOffset) * 2.5f;
+            float wave2 = sin((x * 0.08f) - (y * 0.04f) + timeOffset * 1.3f) * 1.8f;
+            float totalWave = wave1 + wave2;
+            
+            // Apply distortion offset
+            int16_t sourceX = x + (int16_t)totalWave;
+            int16_t sourceY = y + (int16_t)(totalWave * 0.6f);
+            
+            // Clamp to image boundaries
+            sourceX = (sourceX < 0) ? 0 : ((sourceX >= width) ? width - 1 : sourceX);
+            sourceY = (sourceY < 0) ? 0 : ((sourceY >= height) ? height - 1 : sourceY);
+            
+            uint32_t sourceIdx = sourceY * width + sourceX;
+            uint16_t pixel = rgbData[sourceIdx];
+            
+            // Extract RGB components
+            uint8_t r = ((pixel >> 11) & 0x1F) * 255 / 31;
+            uint8_t g = ((pixel >> 5) & 0x3F) * 255 / 63;
+            uint8_t b = (pixel & 0x1F) * 255 / 31;
+            
+            // Apply blue-green underwater tint
+            r = r * 70 / 100;  // Reduce red
+            g = g * 95 / 100;  // Keep most green
+            b = b * 120 / 100; // Boost blue
+            b = (b > 255) ? 255 : b;
+            
+            // Create caustic light patterns (underwater sunlight ripples)
+            float causticX = x * 0.08f + timeOffset * 0.5f;
+            float causticY = y * 0.08f + timeOffset * 0.7f;
+            
+            float caustic1 = sin(causticX) * cos(causticY);
+            float caustic2 = sin(causticX * 1.5f + 1.0f) * cos(causticY * 1.3f + 0.5f);
+            float causticPattern = (caustic1 + caustic2) * 0.5f + 0.5f; // Normalize to 0-1
+            
+            // Create brighter caustic spots
+            if (causticPattern > 0.7f) {
+                float intensity = (causticPattern - 0.7f) / 0.3f; // 0-1 range for bright spots
+                r += (uint8_t)(intensity * 60);
+                g += (uint8_t)(intensity * 80);
+                b += (uint8_t)(intensity * 40);
+            }
+            
+            // Add shimmering highlights in upper portion (simulates surface)
+            if (y < height / 3) {
+                float shimmer = sin(x * 0.15f + timeOffset * 2.0f) * 
+                                cos(y * 0.12f + timeOffset * 1.8f);
+                shimmer = (shimmer + 1.0f) * 0.5f; // Normalize to 0-1
+                
+                if (shimmer > 0.8f) {
+                    float sparkle = (shimmer - 0.8f) / 0.2f;
+                    r += (uint8_t)(sparkle * 50);
+                    g += (uint8_t)(sparkle * 70);
+                    b += (uint8_t)(sparkle * 90);
+                }
+            }
+            
+            // Add depth gradient (darker towards bottom)
+            float depthFactor = 1.0f - (y / (float)height) * 0.3f;
+            r = (uint8_t)(r * depthFactor);
+            g = (uint8_t)(g * depthFactor);
+            b = (uint8_t)(b * depthFactor);
+            
+            // Add slight green tint to deeper areas
+            if (y > height / 2) {
+                g += (uint8_t)((y - height/2) * 0.1f);
+            }
+            
+            // Clamp all values
+            r = (r > 255) ? 255 : r;
+            g = (g > 255) ? 255 : g;
+            b = (b > 255) ? 255 : b;
+            
+            // Convert back to RGB565
+            uint16_t r5 = (r >> 3) & 0x1F;
+            uint16_t g6 = (g >> 2) & 0x3F;
+            uint16_t b5 = (b >> 3) & 0x1F;
+            
+            outputRGB565[idx] = (r5 << 11) | (g6 << 5) | b5;
+        }
+    }
+    
+    Serial.println("Underwater effect complete");
 }
 
 // Apply halftone dots effect (newspaper/screen print style)
@@ -758,131 +875,152 @@ void loop() {
             
         case 7: // Showing equalized image
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
-                displaySplashScreen("Comic Effect");
+                displaySplashScreen("Low Poly Effect");
                 currentState = 8;
                 lastSwitchTime = currentTime;
             }
             break;
             
-        case 8: // Splash for comic
+        case 8: // Splash for low poly
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
-                applyComicEffect(&img2, processingBuffer);
-                lv_img_dsc_t comicImg = createRGB565Image(processingBuffer, 
-                                                          img2.header.w, 
-                                                          img2.header.h);
-                displayImageOnScreen(&comicImg, "Comic Effect");
+                applyLowPolyEffect(&img2, processingBuffer);
+                lv_img_dsc_t lowPolyImg = createRGB565Image(processingBuffer, 
+                                                            img2.header.w, 
+                                                            img2.header.h);
+                displayImageOnScreen(&lowPolyImg, "Low Poly Effect");
                 currentState = 9;
                 lastSwitchTime = currentTime;
-                Serial.println("Displaying comic effect image");
+                Serial.println("Displaying low poly effect");
             }
             break;
             
-        case 9: // Showing comic image
+        case 9: // Showing low poly
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
-                displaySplashScreen("Halftone Effect");
+                displaySplashScreen("Underwater Effect");
                 currentState = 10;
                 lastSwitchTime = currentTime;
             }
             break;
             
-        case 10: // Splash for halftone
+        case 10: // Splash for underwater
+            if (currentTime - lastSwitchTime >= SPLASH_TIME) {
+                applyUnderwaterEffect(&img2, processingBuffer);
+                lv_img_dsc_t underwaterImg = createRGB565Image(processingBuffer, 
+                                                               img2.header.w, 
+                                                               img2.header.h);
+                displayImageOnScreen(&underwaterImg, "Underwater Effect");
+                currentState = 11;
+                lastSwitchTime = currentTime;
+                Serial.println("Displaying underwater effect");
+            }
+            break;
+            
+        case 11: // Showing underwater
+            if (currentTime - lastSwitchTime >= 10000) {//10s due to animation
+                displaySplashScreen("Halftone Effect");
+                currentState = 12;
+                lastSwitchTime = currentTime;
+            }
+            break;
+            
+        case 12: // Splash for halftone
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
                 applyHalftoneEffect(&img2, processingBuffer);
                 lv_img_dsc_t halftoneImg = createRGB565Image(processingBuffer, 
                                                              img2.header.w, 
                                                              img2.header.h);
                 displayImageOnScreen(&halftoneImg, "Halftone Effect");
-                currentState = 11;
+                currentState = 13;
                 lastSwitchTime = currentTime;
                 Serial.println("Displaying halftone effect");
             }
             break;
             
-        case 11: // Showing halftone
+        case 13: // Showing halftone
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
                 displaySplashScreen("Calm Mood");
-                currentState = 12;
+                currentState = 14;
                 lastSwitchTime = currentTime;
             }
             break;
             
-        case 12: // Splash for calm mood
+        case 14: // Splash for calm mood
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
                 applyThermalMood(&img2, processingBuffer, 0); // Calm mode
                 lv_img_dsc_t calmImg = createRGB565Image(processingBuffer, 
                                                          img2.header.w, 
                                                          img2.header.h);
                 displayImageOnScreen(&calmImg, "Calm Mood");
-                currentState = 13;
+                currentState = 15;
                 lastSwitchTime = currentTime;
                 Serial.println("Displaying calm mood");
             }
             break;
             
-        case 13: // Showing calm mood
+        case 15: // Showing calm mood
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
                 displaySplashScreen("Warm Mood");
-                currentState = 14;
+                currentState = 16;
                 lastSwitchTime = currentTime;
             }
             break;
             
-        case 14: // Splash for warm mood
+        case 16: // Splash for warm mood
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
                 applyThermalMood(&img2, processingBuffer, 1); // Warm mode
                 lv_img_dsc_t warmImg = createRGB565Image(processingBuffer, 
                                                          img2.header.w, 
                                                          img2.header.h);
                 displayImageOnScreen(&warmImg, "Warm Mood");
-                currentState = 15;
+                currentState = 17;
                 lastSwitchTime = currentTime;
                 Serial.println("Displaying warm mood");
             }
             break;
             
-        case 15: // Showing warm mood
+        case 17: // Showing warm mood
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
                 displaySplashScreen("Energetic Mood");
-                currentState = 16;
+                currentState = 18;
                 lastSwitchTime = currentTime;
             }
             break;
             
-        case 16: // Splash for energetic mood
+        case 18: // Splash for energetic mood
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
                 applyThermalMood(&img2, processingBuffer, 2); // Energetic mode
                 lv_img_dsc_t energeticImg = createRGB565Image(processingBuffer, 
                                                               img2.header.w, 
                                                               img2.header.h);
                 displayImageOnScreen(&energeticImg, "Energetic Mood (Neon)");
-                currentState = 17;
+                currentState = 19;
                 lastSwitchTime = currentTime;
                 Serial.println("Displaying energetic mood");
             }
             break;
             
-        case 17: // Showing energetic mood
+        case 19: // Showing energetic mood
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
                 displaySplashScreen("Rainy Mood");
-                currentState = 18;
+                currentState = 20;
                 lastSwitchTime = currentTime;
             }
             break;
             
-        case 18: // Splash for rainy mood
+        case 20: // Splash for rainy mood
             if (currentTime - lastSwitchTime >= SPLASH_TIME) {
                 applyThermalMood(&img2, processingBuffer, 3); // Rainy mode
                 lv_img_dsc_t rainyImg = createRGB565Image(processingBuffer, 
                                                           img2.header.w, 
                                                           img2.header.h);
                 displayImageOnScreen(&rainyImg, "Rainy Mood");
-                currentState = 19;
+                currentState = 21;
                 lastSwitchTime = currentTime;
                 Serial.println("Displaying rainy mood");
             }
             break;
             
-        case 19: // Showing rainy mood
+        case 21: // Showing rainy mood
             if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
                 // Loop back to beginning
                 displaySplashScreen("Original Image");
