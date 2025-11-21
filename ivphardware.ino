@@ -365,7 +365,7 @@ void applyUnderwaterEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565) {
             
             // Apply blue-green underwater tint
             r = r * 2 / 100;  // Reduce red
-            g = g * 95 / 100;  // Keep most green
+            g = g * 2 / 100;  // Keep most green
             b = b * 120 / 100; // Boost blue
             b = (b > 255) ? 255 : b;
             
