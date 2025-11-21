@@ -8,9 +8,6 @@
 ![Image Magic](https://img.shields.io/badge/Image%20Magic-🪄-orange?style=for-the-badge)
 
 **Transform your tiny display into a pocket-sized art gallery!**
-
-[✨ Features](#-features) • [🚀 Quick Start](#-quick-start) • [🎪 Effects Gallery](#-effects-gallery) • [💝 Why You'll Love It](#-why-youll-love-it)
-
 ---
 
 </div>
