@@ -12,7 +12,7 @@ extern const lv_img_dsc_t img2;
 #define SCREEN_BRIGHTNESS 255
 #define SCREEN_WIDTH 172
 #define SCREEN_HEIGHT 320
-#define DISPLAY_TIME 5000  // 3 seconds per image
+#define DISPLAY_TIME 3000  // 3 seconds per image
 #define SPLASH_TIME 1500   // 1.5 seconds for splash screen
 
 // LVGL Display
@@ -364,7 +364,7 @@ void applyUnderwaterEffect(const lv_img_dsc_t* imgDsc, uint16_t* outputRGB565) {
             uint8_t b = (pixel & 0x1F) * 255 / 31;
             
             // Apply blue-green underwater tint
-            r = r * 70 / 100;  // Reduce red
+            r = r * 2 / 100;  // Reduce red
             g = g * 95 / 100;  // Keep most green
             b = b * 120 / 100; // Boost blue
             b = (b > 255) ? 255 : b;
@@ -916,7 +916,7 @@ void loop() {
             break;
             
         case 11: // Showing underwater
-            if (currentTime - lastSwitchTime >= 10000) {//10s due to animation
+            if (currentTime - lastSwitchTime >= DISPLAY_TIME) {
                 displaySplashScreen("Halftone Effect");
                 currentState = 12;
                 lastSwitchTime = currentTime;
